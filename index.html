@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+
+<html lang="zh-TW">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>鮭切成本分析系統（PDF升級版）</title>
+
+<!-- PDF.js -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+<style>
+
+body{font-family:Arial;margin:20px;background:#f4f6f8}
+
+h1,h2{color:#1f4e79}
+
+table{width:100%;border-collapse:collapse;background:#fff;margin-bottom:16px}
+
+th,td{border:1px solid #ccc;padding:6px;text-align:center}
+
+input,select{width:100%;box-sizing:border-box}
+
+button{padding:8px 14px;margin:4px;cursor:pointer}
+
+.card{background:#fff;padding:12px;border-radius:8px;margin-bottom:12px}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>鮭切成本分析系統（PDF匯入版）</h1>
+
+<div class="card">
+
+<input type="file" id="pdfFile" accept="application/pdf">
+
+<button onclick="importPDF()">📄 匯入PDF</button>
+
+<button onclick="calc()">重新計算</button>
+
+<button onclick="saveData()">儲存</button>
+
+<button onclick="loadData()">載入</button>
+
+</div>
+
+<div class="card">
+
+單號：<span id="orderNo">-</span><br>
+
+總成本：<span id="tmc">0</span><br>
+
+總重量：<span id="tow">0</span><br>
+
+製成率：<span id="yield">0%</span>
+
+</div>
+
+<h2>第一部份－原料投入</h2>
+
+<table id="m">
+
+<thead>
+
+<tr>
+
+<th>單號</th>
+
+<th>料號</th>
+
+<th>規格</th>
+
+<th>投入量</th>
+
+<th>成本</th>
+
+<th>總成本</th>
+
+</tr>
+
+</thead>
+
+<tbody></tbody>
+
+</table>
+
+<h2>第二部份－成品產出</h2>
+
+<table id="p">
+
+<thead>
+
+<tr>
+
+<th>料號</th>
+
+<th>次要數量</th>
+
+<th>重量</th>
+
+<th>佔比</th>
+
+<th>包冰率</th>
+
+<th>肉重</th>
+
+<th>售價</th>
+
+<th>銷售額</th>
+
+<th>銷售佔比</th>
+
+<th>原料成本</th>
+
+<th>轉撥價</th>
+
+<th>成品成本</th>
+
+<th>含稅成本</th>
+
+<th>毛利率</th>
+
+<th>型態</th>
+
+</tr>
+
+</thead>
+
+<tbody></tbody>
+
+</table>
+
+<script>
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+let globalOrderNo="";
+
+function build(){
+
+let m=document.querySelector("#m tbody");
+
+let p=document.querySelector("#p tbody");
+
+for(let i=0;i<10;i++){
+
+m.innerHTML+=`
+
+<tr>
+
+<td class="order"></td>
+
+<td><input></td>
+
+<td><input></td>
+
+<td><input class="qty"></td>
+
+<td><input class="cost"></td>
+
+<td><input readonly></td>
+
+</tr>`;
+
+}
+
+for(let i=0;i<40;i++){
+
+p.innerHTML+=`
+
+<tr>
+
+<td><input></td>
+
+<td><input></td>
+
+<td><input class="w"></td>
+
+<td><input readonly></td>
+
+<td><input class="ice"></td>
+
+<td><input readonly></td>
+
+<td><input class="price"></td>
+
+<td><input readonly></td>
+
+<td><input readonly></td>
+
+<td><input readonly></td>
+
+<td><input class="trf"></td>
+
+<td><input readonly></td>
+
+<td><input readonly></td>
+
+<td><input readonly></td>
+
+<td>
+
+<select>
+
+<option>U1</option><option>U2</option>
+
+<option>U3</option><option>U4</option>
+
+</select>
+
+</td>
+
+</tr>`;
+
+}
+
+}
+
+async function importPDF(){
+
+const file=document.getElementById("pdfFile").files[0];
+
+if(!file){alert("請選PDF");return;}
+
+const arrayBuffer=await file.arrayBuffer();
+
+const pdf=await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+
+let text="";
+
+for(let i=1;i<=pdf.numPages;i++){
+
+let page=await pdf.getPage(i);
+
+let content=await page.getTextContent();
+
+text+=content.items.map(s=>s.str).join(" ");
+
+}
+
+// 🔍 單號
+
+let order=text.match(/\d{9}/);
+
+if(order){
+
+globalOrderNo=order[0];
+
+document.getElementById("orderNo").innerText=globalOrderNo;
+
+}
+
+// 🔍 清空舊資料
+
+document.querySelector("#m tbody").innerHTML="";
+
+document.querySelector("#p tbody").innerHTML="";
+
+build();
+
+// 🔍 原料 (料號 + 數量)
+
+let matRegex=/([A-Z0-9]{6,})\s+(\d+)\s*KG/g;
+
+let mBody=document.querySelector("#m tbody");
+
+let mMatch;
+
+let mi=0;
+
+while((mMatch=matRegex.exec(text)) && mi<10){
+
+let row=mBody.rows[mi];
+
+row.cells[0].innerText=globalOrderNo;
+
+row.cells[1].querySelector("input").value=mMatch[1];
+
+row.cells[3].querySelector("input").value=mMatch[2];
+
+mi++;
+
+}
+
+// 🔍 成品 (料號 + 次要數 + 重量)
+
+let prodRegex=/([A-Z0-9]{6,})\s+(\d+\.?\d*)\s+(\d+\.?\d*)\s*KG/g;
+
+let pBody=document.querySelector("#p tbody");
+
+let pi=0;
+
+while((mMatch=prodRegex.exec(text)) && pi<40){
+
+let row=pBody.rows[pi];
+
+row.cells[0].querySelector("input").value=mMatch[1];
+
+row.cells[1].querySelector("input").value=mMatch[2];
+
+row.cells[2].querySelector("input").value=mMatch[3];
+
+pi++;
+
+}
+
+calc();
+
+}
+
+function calc(){
+
+let mRows=document.querySelectorAll("#m tbody tr");
+
+let pRows=document.querySelectorAll("#p tbody tr");
+
+let totalCost=0,totalIn=0,totalW=0,totalSales=0,totalMeat=0;
+
+// 原料
+
+mRows.forEach(r=>{
+
+let q=parseFloat(r.cells[3].querySelector("input").value)||0;
+
+let c=parseFloat(r.cells[4].querySelector("input").value)||0;
+
+let t=q*c;
+
+r.cells[5].querySelector("input").value=t.toFixed(2);
+
+totalCost+=t;
+
+totalIn+=q;
+
+});
+
+// 成品第一輪
+
+pRows.forEach(r=>{
+
+let w=parseFloat(r.cells[2].querySelector("input").value)||0;
+
+let ice=parseFloat(r.cells[4].querySelector("input").value)||0;
+
+let price=parseFloat(r.cells[6].querySelector("input").value)||0;
+
+let meat=w/(1+ice/100);
+
+r.cells[5].querySelector("input").value=meat.toFixed(2);
+
+let sales=w*price;
+
+r.cells[7].querySelector("input").value=sales.toFixed(2);
+
+totalW+=w;
+
+totalSales+=sales;
+
+totalMeat+=meat;
+
+});
+
+// 第二輪
+
+pRows.forEach(r=>{
+
+let w=parseFloat(r.cells[2].querySelector("input").value)||0;
+
+let sales=parseFloat(r.cells[7].querySelector("input").value)||0;
+
+let salesRatio=totalSales?sales/totalSales:0;
+
+let raw=w?(salesRatio*totalCost)/w:0;
+
+r.cells[8].querySelector("input").value=(salesRatio*100).toFixed(2)+"%";
+
+r.cells[9].querySelector("input").value=raw.toFixed(2);
+
+let trf=parseFloat(r.cells[10].querySelector("input").value)||0;
+
+let cost=raw+trf;
+
+r.cells[11].querySelector("input").value=cost.toFixed(2);
+
+r.cells[12].querySelector("input").value=(cost*1.05).toFixed(2);
+
+let price=parseFloat(r.cells[6].querySelector("input").value)||0;
+
+r.cells[13].querySelector("input").value=
+
+price?((price-cost*1.05)/price*100).toFixed(2)+"%":"0%";
+
+});
+
+document.getElementById("tmc").innerText=totalCost.toFixed(2);
+
+document.getElementById("tow").innerText=totalW.toFixed(2);
+
+document.getElementById("yield").innerText=
+
+totalIn?(totalMeat/totalIn*100).toFixed(2)+"%":"0%";
+
+}
+
+function saveData(){
+
+localStorage.setItem("salmonPDF",document.body.innerHTML);
+
+alert("已儲存");
+
+}
+
+function loadData(){
+
+location.reload();
+
+}
+
+build();
+
+</script>
+
+</body>
+
+</html>
